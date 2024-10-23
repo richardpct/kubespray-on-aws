@@ -24,7 +24,7 @@ data "aws_ami" "linux" {
 
   filter {
     name   = "name"
-    values = [local.distribution == "ubuntu" ? "ubuntu-minimal/images/hvm-ssd-gp3/ubuntu-oracular-24.10-amd64-minimal-20241009" : "amazon/al2023-ami-*-kernel-*-x86_64"]
+    values = [local.distribution == "ubuntu" ? "ubuntu-minimal/images/hvm-ssd/ubuntu-focal-20.04-amd64-minimal-*" : "amazon/al2023-ami-*-kernel-*-x86_64"]
   }
 
   filter {
@@ -46,12 +46,13 @@ resource "aws_eip" "bastion" {
 resource "aws_launch_configuration" "bastion" {
   name                        = "bastion"
   image_id                    = data.aws_ami.linux.id
-  user_data                   = templatefile("${local.distribution}/user-data-bastion.sh",
+  user_data                   = templatefile("${local.distribution}/user-data-bastion-${local.ubuntu_vers}.sh",
                                              { eip_bastion_id = aws_eip.bastion.id,
-                                               region         = var.region,
-                                               ssh_key        = var.ssh_bastion_private_key,
-                                               archi          = local.archi,
-                                               kubespray_vers = local.kubespray_vers
+                                               region            = var.region,
+                                               ssh_key           = var.ssh_bastion_private_key,
+                                               archi             = local.archi,
+                                               kube_api_internet = aws_lb.internet.dns_name,
+                                               kubespray_vers    = local.kubespray_vers
                                              })
   instance_type               = var.instance_type_bastion
   spot_price                  = local.bastion_price
