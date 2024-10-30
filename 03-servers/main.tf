@@ -180,3 +180,17 @@ resource "aws_autoscaling_group" "kubernetes_worker" {
     propagate_at_launch = true
   }
 }
+
+resource "null_resource" "get_kube_config" {
+  provisioner "local-exec" {
+    command = <<EOF
+while [[ $(aws ec2 describe-instances --filters "Name=tag:Name,Values=kubernetes worker" | jq '.Reservations[].Instances[].PrivateIpAddress' | grep 192 | wc -l) -ne 3 ]]; do sleep 10; done
+while ! nc -w1 ${aws_eip.bastion.public_ip} ${local.ssh_port}; do sleep 10; done
+ssh -o StrictHostKeyChecking=accept-new ${local.linux_user}@${aws_eip.bastion.public_ip} 'until [ -f /home/ubuntu/.kube/config ]; do sleep 60; done'
+ssh ${local.linux_user}@${aws_eip.bastion.public_ip} 'sed -e "s;https://.*:6443;https://${aws_lb.internet.dns_name}:6443;" /home/ubuntu/.kube/config' > ~/.kube/config-aws
+chmod 600 ~/.kube/config-aws
+    EOF
+  }
+
+  depends_on = [aws_autoscaling_group.kubernetes_worker]
+}

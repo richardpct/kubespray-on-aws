@@ -16,10 +16,10 @@ locals {
   bastion_price  = "0.0055"
   bastion_min    = 1
   bastion_max    = 1
-  master_price   = "0.009"
+  master_price   = "0.0095"
   master_min     = 3
   master_max     = 3
-  worker_price   = "0.009"
+  worker_price   = "0.0095"
   worker_min     = 3
   worker_max     = 3
   record_dns     = toset(["grafana", "vault", "www2", "argocd"])
