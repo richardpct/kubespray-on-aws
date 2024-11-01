@@ -13,16 +13,16 @@ locals {
   nodeport_http  = 80
   nodeport_https = 443
   anywhere       = ["0.0.0.0/0"]
-  bastion_price  = "0.0055"
+  bastion_price  = "0.005"
   bastion_min    = 1
   bastion_max    = 1
-  master_price   = "0.0095"
+  master_price   = "0.01"
   master_min     = 3
   master_max     = 3
-  worker_price   = "0.0095"
+  worker_price   = "0.01"
   worker_min     = 3
   worker_max     = 3
-  record_dns     = toset(["grafana", "vault", "www2", "argocd"])
+  record_dns     = toset(["grafana", "vault", "www2", "argocd", "jfrog"])
 }
 
 variable "region" {
@@ -43,19 +43,19 @@ variable "key_network" {
 variable "instance_type_bastion" {
   type        = string
   description = "instance type"
-  default     = "t2.micro"
+  default     = "t3a.micro"
 }
 
 variable "instance_type_master" {
   type        = string
   description = "instance type"
-  default     = "t3.small"
+  default     = "t3a.small"
 }
 
 variable "instance_type_worker" {
   type        = string
   description = "instance type"
-  default     = "t3.small"
+  default     = "t3a.small"
 }
 
 variable "root_size_master" {
