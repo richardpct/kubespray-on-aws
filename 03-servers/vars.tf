@@ -1,9 +1,9 @@
 locals {
   distribution   = "ubuntu" // amazonlinux or ubuntu
   linux_user     = local.distribution == "ubuntu" ? "ubuntu" : "ec2-user"
-  ubuntu_vers    = "20.04"
+  ubuntu_vers    = "24.04"
   archi          = "amd64" // amd64 or arm64
-  kubespray_vers = "v2.23.1"
+  kubespray_vers = "v2.26.0"
   ssh_port       = 22
   http_port      = 80
   https_port     = 443
@@ -13,13 +13,13 @@ locals {
   nodeport_http  = 80
   nodeport_https = 443
   anywhere       = ["0.0.0.0/0"]
-  bastion_price  = "0.005"
+  bastion_price  = "0.004"
   bastion_min    = 1
   bastion_max    = 1
-  master_price   = "0.01"
+  master_price   = "0.008"
   master_min     = 3
   master_max     = 3
-  worker_price   = "0.01"
+  worker_price   = "0.02"
   worker_min     = 3
   worker_max     = 3
   record_dns     = toset(["grafana", "vault", "www2", "argocd", "jfrog"])
@@ -43,19 +43,19 @@ variable "key_network" {
 variable "instance_type_bastion" {
   type        = string
   description = "instance type"
-  default     = "t3a.micro"
+  default     = "t3.micro"
 }
 
 variable "instance_type_master" {
   type        = string
   description = "instance type"
-  default     = "t3a.small"
+  default     = "t3.small"
 }
 
 variable "instance_type_worker" {
   type        = string
   description = "instance type"
-  default     = "t3a.small"
+  default     = "t3.medium"
 }
 
 variable "root_size_master" {

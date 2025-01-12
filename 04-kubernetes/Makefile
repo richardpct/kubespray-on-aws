@@ -11,8 +11,8 @@ help: ## Show help
 
 $(TERRAFORM_LOCK):
 	tofu init \
-		-backend-config="bucket_certificate=${TF_VAR_bucket}" \
-		-backend-config="key_certificate=${TF_VAR_key_kubernetes}" \
+		-backend-config="bucket=${TF_VAR_bucket}" \
+		-backend-config="key=${TF_VAR_key_kubernetes}" \
 		-backend-config="region=${TF_VAR_region}"
 
 .PHONY: init
@@ -28,7 +28,6 @@ plan: init ## Dry run
 
 .PHONY: destroy
 destroy: ## Destroy the infrastructure
-	kubectl -n longhorn-system patch -p '{"value": "true"}' --type=merge lhs deleting-confirmation-flag || true
 	tofu destroy
 
 .PHONY: clean

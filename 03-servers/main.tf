@@ -24,7 +24,7 @@ data "aws_ami" "linux" {
 
   filter {
     name   = "name"
-    values = [local.distribution == "ubuntu" ? "ubuntu-minimal/images/hvm-ssd/ubuntu-focal-20.04-amd64-minimal-*" : "amazon/al2023-ami-*-kernel-*-x86_64"]
+    values = [local.distribution == "ubuntu" ? "ubuntu-minimal/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-minimal-*" : "amazon/al2023-ami-*-kernel-*-x86_64"]
   }
 
   filter {
@@ -43,23 +43,36 @@ resource "aws_eip" "bastion" {
   }
 }
 
-resource "aws_launch_configuration" "bastion" {
+resource "aws_launch_template" "bastion" {
   name                        = "bastion"
   image_id                    = data.aws_ami.linux.id
-  user_data                   = templatefile("${local.distribution}/user-data-bastion-${local.ubuntu_vers}.sh",
-                                             { eip_bastion_id = aws_eip.bastion.id,
+  user_data                   = base64encode( templatefile("${local.distribution}/user-data-bastion-${local.ubuntu_vers}.sh",
+                                             { eip_bastion_id    = aws_eip.bastion.id,
                                                region            = var.region,
                                                ssh_key           = var.ssh_bastion_private_key,
                                                archi             = local.archi,
                                                kube_api_internet = aws_lb.internet.dns_name,
                                                kubespray_vers    = local.kubespray_vers
-                                             })
+                                             }))
   instance_type               = var.instance_type_bastion
-  spot_price                  = local.bastion_price
   key_name                    = aws_key_pair.deployer.key_name
-  security_groups             = [aws_security_group.bastion.id]
-  iam_instance_profile        = aws_iam_instance_profile.profile.name
-  associate_public_ip_address = true
+
+  network_interfaces {
+    security_groups             = [aws_security_group.bastion.id]
+    associate_public_ip_address = true
+  }
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.profile.name
+  }
+
+  instance_market_options {
+    market_type = "spot"
+
+    spot_options {
+      max_price = local.bastion_price
+    }
+  }
 
   lifecycle {
     create_before_destroy = true
@@ -68,10 +81,13 @@ resource "aws_launch_configuration" "bastion" {
 
 resource "aws_autoscaling_group" "bastion" {
   name                 = "asg_bastion"
-  launch_configuration = aws_launch_configuration.bastion.id
   vpc_zone_identifier  = data.terraform_remote_state.network.outputs.subnet_public[*]
   min_size             = local.bastion_min
   max_size             = local.bastion_max
+
+  launch_template {
+    id = aws_launch_template.bastion.id
+  }
 
   tag {
     key                 = "Name"
@@ -80,19 +96,29 @@ resource "aws_autoscaling_group" "bastion" {
   }
 }
 
-resource "aws_launch_configuration" "kubernetes_master" {
-  name            = "Kubernetes master"
+resource "aws_launch_template" "kubernetes_master" {
+  name            = "Kubernetes-master"
   image_id        = data.aws_ami.linux.id
-  user_data       = templatefile("${local.distribution}/user-data-master.sh",
+  user_data       = base64encode(templatefile("${local.distribution}/user-data-master.sh",
                                  { linux_user        = local.linux_user,
                                    archi             = local.archi,
                                    ssh_key           = var.ssh_nodes_public_key,
                                    kube_api_internet = aws_lb.internet.dns_name,
-                                   kube_api_internal = aws_lb.api_internal.dns_name })
+                                   kube_api_internal = aws_lb.api_internal.dns_name }))
   instance_type   = var.instance_type_master
-  spot_price      = local.master_price
   key_name        = aws_key_pair.deployer.key_name
-  security_groups = [aws_security_group.kubernetes_master.id]
+
+  network_interfaces {
+    security_groups = [aws_security_group.kubernetes_master.id]
+  }
+
+  instance_market_options {
+    market_type = "spot"
+
+    spot_options {
+      max_price = local.master_price
+    }
+  }
 
   lifecycle {
     create_before_destroy = true
@@ -101,11 +127,14 @@ resource "aws_launch_configuration" "kubernetes_master" {
 
 resource "aws_autoscaling_group" "kubernetes_master" {
   name                 = "Kubernetes master"
-  launch_configuration = aws_launch_configuration.kubernetes_master.name
   vpc_zone_identifier  = data.terraform_remote_state.network.outputs.subnet_private[*]
   target_group_arns    = [aws_lb_target_group.api.arn, aws_lb_target_group.api_internal.arn]
   min_size             = local.master_min
   max_size             = local.master_max
+
+  launch_template {
+    id = aws_launch_template.kubernetes_master.id
+  }
 
   tag {
     key                 = "Name"
@@ -137,28 +166,46 @@ sed -i -e "/bastion.${var.my_domain}/d" ~/.ssh/known_hosts
   depends_on = [aws_autoscaling_group.bastion]
 }
 
-resource "aws_launch_configuration" "kubernetes_worker" {
-  name            = "Kubernetes worker"
+resource "aws_launch_template" "kubernetes_worker" {
+  name            = "Kubernetes-worker"
   image_id        = data.aws_ami.linux.id
-  user_data       = templatefile("${local.distribution}/user-data-worker.sh",
+  user_data       = base64encode(templatefile("${local.distribution}/user-data-worker.sh",
                                  { archi   = local.archi,
                                    ssh_key = var.ssh_nodes_public_key
-                                 })
+                                 }))
   instance_type   = var.instance_type_worker
-  spot_price      = local.worker_price
   key_name        = aws_key_pair.deployer.key_name
-  security_groups = [aws_security_group.kubernetes_worker.id]
 
-  ebs_block_device {
-    device_name           = "/dev/sdb"
-    volume_size           = var.longhorn_size_worker
-    volume_type           = "gp2"
-    delete_on_termination = true
+  block_device_mappings {
+    device_name = data.aws_ami.linux.root_device_name
+
+    ebs {
+      volume_size           = var.root_size_worker
+      volume_type           = "gp2"
+      delete_on_termination = true
+    }
   }
 
-  root_block_device {
-    volume_size           = var.root_size_worker
-    delete_on_termination = true
+  block_device_mappings {
+    device_name = "/dev/sdb"
+
+    ebs {
+      volume_size           = var.longhorn_size_worker
+      volume_type           = "gp2"
+      delete_on_termination = true
+    }
+  }
+
+  network_interfaces {
+    security_groups = [aws_security_group.kubernetes_worker.id]
+  }
+
+  instance_market_options {
+    market_type = "spot"
+
+    spot_options {
+      max_price = local.worker_price
+    }
   }
 
   lifecycle {
@@ -168,11 +215,14 @@ resource "aws_launch_configuration" "kubernetes_worker" {
 
 resource "aws_autoscaling_group" "kubernetes_worker" {
   name                 = "Kubernetes worker"
-  launch_configuration = aws_launch_configuration.kubernetes_worker.name
   vpc_zone_identifier  = data.terraform_remote_state.network.outputs.subnet_private[*]
   target_group_arns    = [aws_lb_target_group.https.arn]
   min_size             = local.worker_min
   max_size             = local.worker_max
+
+  launch_template {
+    id = aws_launch_template.kubernetes_worker.id
+  }
 
   tag {
     key                 = "Name"
@@ -184,7 +234,7 @@ resource "aws_autoscaling_group" "kubernetes_worker" {
 resource "null_resource" "get_kube_config" {
   provisioner "local-exec" {
     command = <<EOF
-while [[ $(aws ec2 describe-instances --filters "Name=tag:Name,Values=kubernetes worker" | jq '.Reservations[].Instances[].PrivateIpAddress' | grep 192 | wc -l) -ne 3 ]]; do sleep 10; done
+while [[ $(aws ec2 describe-instances --filters "Name=tag:Name,Values=kubernetes worker" | jq '.Reservations[].Instances[].PrivateIpAddress' | grep 10 | wc -l) -ne 3 ]]; do sleep 10; done
 while ! nc -w1 ${aws_eip.bastion.public_ip} ${local.ssh_port}; do sleep 10; done
 ssh -o StrictHostKeyChecking=accept-new ${local.linux_user}@${aws_eip.bastion.public_ip} 'until [ -f /home/ubuntu/.kube/config ]; do sleep 60; done'
 ssh ${local.linux_user}@${aws_eip.bastion.public_ip} 'sed -e "s;https://.*:6443;https://${aws_lb.internet.dns_name}:6443;" /home/ubuntu/.kube/config' > ~/.kube/config-aws
